@@ -46,7 +46,7 @@ function build_ffmpeg()
 	git clone git://source.ffmpeg.org/ffmpeg.git ffmpeg
 	cd ffmpeg
 	./configure
-	make && sudo make install
+	make -j`nproc` && sudo make install
 	cd $HOME_DIR
 	sudo rm -R /usr/src/ffmpeg
 }
@@ -57,13 +57,13 @@ function install_mono()
 	echo "================================================="
 	echo "Getting Mono libraries..."
 	echo "================================================="
-    sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
-    echo "deb http://download.mono-project.com/repo/debian wheezy main" | sudo tee /etc/apt/sources.list.d/mono-xamarin.list
-    test $(cat /etc/debian_version) > 7.999999 && (
-        echo "deb http://download.mono-project.com/repo/debian wheezy-apache24-compat main" | sudo tee -a /etc/apt/sources.list.d/mono-xamarin.list;
-        echo "deb http://download.mono-project.com/repo/debian wheezy-libjpeg62-compat main" | sudo tee -a /etc/apt/sources.list.d/mono-xamarin.list;
-    )
-    sudo apt-get update 2>&1 | dialog --title "Updating package database..." --infobox "\nPlease wait...\n" 11 70
+	sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
+	echo "deb http://download.mono-project.com/repo/debian wheezy main" | sudo tee /etc/apt/sources.list.d/mono-xamarin.list
+	test $(cat /etc/debian_version) > 7.999999 && (
+        	echo "deb http://download.mono-project.com/repo/debian wheezy-apache24-compat main" | sudo tee -a /etc/apt/sources.list.d/mono-xamarin.list;
+		echo "deb http://download.mono-project.com/repo/debian wheezy-libjpeg62-compat main" | sudo tee -a /etc/apt/sources.list.d/mono-xamarin.list;
+	)
+	sudo apt-get update 2>&1 | dialog --title "Updating package database..." --infobox "\nPlease wait...\n" 11 70
 	sudo apt-get --show-progress -y install mono-complete 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --title "Installing Mono libraries if they are not present" --gauge "\nPlease wait...\n" 11 70
 }
 
@@ -110,7 +110,7 @@ function create_service()
 	echo "================================================="
 	echo "Adding Emby Service..."
 	echo "================================================="
-	echo "#! /bin/sh" > /tmp/emby
+	echo "#! /bin/bash" > /tmp/emby
 	echo "### BEGIN INIT INFO" >> /tmp/emby
 	echo "# Provides:          emby" >> /tmp/emby
 	echo "# Required-Start:    \$local_fs \$network" >> /tmp/emby
@@ -122,7 +122,7 @@ function create_service()
 	echo "### END INIT INFO" >> /tmp/emby
 	echo "" >> /tmp/emby
 	echo "PIDFILE=\"/tmp/mediabrowser-server.pid\"" >> /tmp/emby
-	echo "EXEC=\"$EMBY_HOME/MediaBrowser.Server.Mono.exe -ffmpeg \"/usr/local/share/man/man1/ffmpeg.1\" -ffprobe \"/usr/local/share/man/man1/ffprobe.1\"\"" >> /tmp/emby
+	echo "EXEC=\"$EMBY_HOME/MediaBrowser.Server.Mono.exe -ffmpeg /usr/local/share/man/man1/ffmpeg.1 -ffprobe /usr/local/share/man/man1/ffprobe.1\"" >> /tmp/emby
 	echo "" >> /tmp/emby
 	echo "function install_start_emby()" >> /tmp/emby
 	echo "{" >> /tmp/emby
@@ -136,21 +136,21 @@ function create_service()
 	echo "" >> /tmp/emby
 	echo "function install_restart_emby()" >> /tmp/emby
 	echo "{" >> /tmp/emby
-	echo "	stop_emby" >> /tmp/emby
-	echo "	start_emby" >> /tmp/emby
+	echo "	install_stop_emby" >> /tmp/emby
+	echo "	install_start_emby" >> /tmp/emby
 	echo "}" >> /tmp/emby
 	echo "" >> /tmp/emby
 	echo "case \"\$1\" in" >> /tmp/emby
 	echo "	start)" >> /tmp/emby
-	echo "		start_emby" >> /tmp/emby
+	echo "		install_start_emby" >> /tmp/emby
 	echo "    ;;" >> /tmp/emby
 	echo "  stop)" >> /tmp/emby
-	echo "		stop_emby" >> /tmp/emby
+	echo "		install_stop_emby" >> /tmp/emby
 	echo "    ;;" >> /tmp/emby
 	echo "  restart|force_reload)" >> /tmp/emby
-	echo "		stop_emby" >> /tmp/emby
+	echo "		install_stop_emby" >> /tmp/emby
 	echo "		sleep 3" >> /tmp/emby
-	echo "		start_emby" >> /tmp/emby
+	echo "		install_start_emby" >> /tmp/emby
 	echo "    ;;" >> /tmp/emby
 	echo "  *)" >> /tmp/emby
 	echo "    echo \"Usage: /etc/init.d/emby {start|stop|restart|force_reload}\"" >> /tmp/emby
@@ -166,10 +166,12 @@ function create_service()
 
 function get_addon()
 {
-	file=$(curl -s $1 | sed -n 's/.*href="\([^"]*\).*/\1/p' | grep "$2")
-	wget --no-check-certificate -w 4 $1/$file -O /tmp/$file 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --title "Downloading Addon" --gauge "\nPlease wait...\n"  11 70
-	(pv -n /tmp/$file | sudo tar xzf - -C $HOME_DIR/.kodi/addons ) 2>&1 | dialog --title "Extracting Addon" --gauge "\nPlease wait...\n" 11 70
-	sudo mv /tmp/$file $HOME_DIR/.kodi/addons/packages/$file
+        file=$(curl -s $1 | sed -n 's/.*href="\([^"]*\).*/\1/p' | grep "$2")
+        wget --no-check-certificate -w 4 $1/$file -O /tmp/$file 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --title "Downloading Addon" --gauge "\nPlease wait...\n"  $
+	# Unzip the addon, and move the zip to the package store of OSMC
+        cd /tmp/
+        unzip /tmp/$file -d $HOME_DIR/.kodi/addons
+        mv /tmp/$file $HOME_DIR/.kodi/addons/packages/$file
 }
 
 function install_addons()
@@ -192,7 +194,7 @@ function install_addons()
 	get_addon $dir/plugin.video.emby.tvshows/ plugin.video.emby.tvshows
 }
 
-function cleaup()
+function cleanup()
 {
 	echo " "
 	echo "================================================="
@@ -200,7 +202,7 @@ function cleaup()
 	echo "================================================="
 	sudo apt-get clean
 
-	ip="$(ifconfig | grep -v 'eth0:' | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)" 
+	ip="hostname -I"
 	dialog --title "FINISHED!" --msgbox "\nYour Emby Server should now be available for you at http://$ip:8096\nPress OK to return to the menu.\n" 11 70
 
 	# restart script
