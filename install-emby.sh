@@ -25,7 +25,7 @@ function update_script()
 	chmod +x $HOME_DIR/install-emby.sh.1
 	mv $HOME_DIR/install-emby.sh.1 $HOME_DIR/install-emby.sh
 	if [[ -f $EMBY_HOME/install-emby.sh ]]; then
-		mv $HOME_DIR/install-emby.sh $EMBY_HOME/install-emby.sh
+		cp $HOME_DIR/install-emby.sh $EMBY_HOME/install-emby.sh
 	fi
 
 	# restart script
