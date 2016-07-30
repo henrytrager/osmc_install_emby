@@ -6,7 +6,7 @@
 # Server to OSMC.  I am not responsible for any harm done to        #
 # your system.  Using this script is done at your own risk.         #
 #===================================================================#
-VERSION=0.3
+VERSION=0.4
 HOME_DIR=/home/osmc
 EMBY_HOME=/opt/mediabrowser
 PID_FILE=$EMBY_HOME/mediabrowser.pid
@@ -21,7 +21,7 @@ function update_script()
 	title "Upgrading Emby installation script..."
 	# ==================================================================
 	# retrieve the latest version of the script from GitHub:
-	wget --no-check-certificate -w 4 -O $HOME_DIR/install-emby.sh.1 https://raw.githubusercontent.com/douglasorend/osmc_install-emby/master/install-emby.sh 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading latest version of Emby Server script" --gauge "\nPlease wait...\n"  11 70
+	wget --no-check-certificate -w 4 -O $HOME_DIR/install-emby.sh.1 https://raw.githubusercontent.com/douglasorend/osmc_install_emby/master/install-emby.sh 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading latest version of Emby Server script" --gauge "\nPlease wait...\n"  11 70
 	chmod +x $HOME_DIR/install-emby.sh.1
 	mv $HOME_DIR/install-emby.sh.1 $HOME_DIR/install-emby.sh
 	if [[ -f $EMBY_HOME/install-emby.sh ]]; then
