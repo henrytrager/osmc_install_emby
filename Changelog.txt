@@ -1,0 +1,19 @@
+v0.4 - July 30th, 2016
+o Fixed updating script to pull from correct URL.
+
+v0.3 - July 30th, 2016
+o Limited choices of options on startup, depending on whether Emby is installed.
+o Changed section titles in script to SSH window titles.
+o Changed dialog boxes to use ASCII characters instead of graphics.
+o Reorganized script file to move certain functions to the top.
+o Added code to copy script to Emby Server folder when updating the script.
+o Added cron task to remove "mediabrowser-server.pid" after reboot.
+o Added code to fix time zone issue found by Toast (in OSMC forum)
+
+v0.2 - July 24th, 2016
+o Merged init.d revisions made by twicejr (https://github.com/twicejr)
+o Merged simpler IP detection revision made by twicejr
+o Merged zip handler revision made by twicejr
+
+v0.1 - July 16th, 2016
+o Initial release of script to the public
