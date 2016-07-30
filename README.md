@@ -17,9 +17,9 @@ When integrated with kodi/Osmc Emby provides a great way to manage your media an
 + Installs the Mono libraries from [Xamarin](https://www.xamarin.com/)
 + Installs the latest Emby Server from [GitHub](https://github.com/MediaBrowser/Emby/releases/latest) (no intervention required)
 + Gets and installs the latest [Emby for Kodi addon](http://kodi.wiki/view/Add-on:Emby_for_Kodi).
++ Creates a service so that the Emby Server starts automatically.
 
 ## Optional actions this script can do:
-+ Creates a service so that the Emby Server starts automatically.
 + Creates a Cron job, to be executedevery night at midnight, in order to keep Emby up-to-date.
 + Can update the script.
 
