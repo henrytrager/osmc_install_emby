@@ -6,8 +6,7 @@
 # Server to OSMC.  I am not responsible for any harm done to        #
 # your system.  Using this script is done at your own risk.         #
 #===================================================================#
-VERSION=0.4
-HOME_DIR=/home/osmc
+VERSION=0.5
 EMBY_HOME=/opt/mediabrowser
 PID_FILE=$EMBY_HOME/mediabrowser.pid
 MONO_DIR=/usr/bin
@@ -73,7 +72,7 @@ function fix_config()
 function find_latest_stable()
 {
 	file=$(curl -s https://github.com/MediaBrowser/Emby/releases/latest | sed -n 's/.*href="\([^"]*\).*/\1/p')
-	LATEST_VER=$(basename $file | tee /tmp/mediabrowser.current)
+	LATEST_VER=$(basename $file)
 	file=$(curl -s $file | sed -n 's/.*href="\([^"]*\).*/\1/p' | grep "Emby.Mono.zip")
 }
 
@@ -87,12 +86,34 @@ function find_latest_beta()
 			file=$item
 		fi
 	done
-	LATEST_VER=$(basename $(dirname $file) | tee /tmp/mediabrowser.current)
+	LATEST_VER=$(basename $(dirname $file))
 }
 
 # ==================================================================
 # Functions performing major tasks in this script:
 # ==================================================================
+function make_choice()
+{
+	find_latest_stable
+	VER_STABLE=$LATEST_VER
+	find_latest_beta
+	VER_BETA=$LATEST_VER
+	version=$(test "$INSTALLED" == "" && echo "" || echo "Installed Version: $INSTALLED\n")
+	cmd=(dialog --ascii-lines --cancel-label "Abort" --backtitle "Simple Emby Server Installer - Version $VERSION" --menu "${version}Select a branch of Emby Server:" 10 40 16)
+	options=(
+		1 "Stable Version: $VER_STABLE"
+		2 "Beta Version  : $VER_BETA"
+	)
+	choices=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
+	if [[ "$choices" == "1" ]]; then
+		BRANCH=stable
+	elif [[ "$choices" == "2" ]]; then
+		BRANCH=beta
+	else
+		exec $HOME_DIR/install-emby.sh
+	fi
+}
+
 function install_prerequisites()
 {
 	# ==================================================================
@@ -116,13 +137,16 @@ function build_ffmpeg()
 	#=============================================================================================
 	sudo aptitude remove ffmpeg
 	cd /usr/src
+	if [[ -d /usr/src/ffmpeg ]]; then
+		sudo rm -R /usr/src/ffmpeg
+	fi
 	sudo mkdir ffmpeg
 	sudo chown `whoami`:users ffmpeg
 	git clone git://source.ffmpeg.org/ffmpeg.git ffmpeg
 	cd ffmpeg
 	./configure
 	make -j`nproc` && sudo make install
-	cd $HOME_DIR
+	cd ~
 	sudo rm -R /usr/src/ffmpeg
 }
 
@@ -146,11 +170,16 @@ function install_emby()
 	# ==================================================================
 	title "Getting latest version of Emby from GitHub..."
 	# ==================================================================
-	find_latest_stable
+	if [[ "$BRANCH" == "beta" ]]; then
+		find_latest_beta
+	else
+		find_latest_stable
+	fi
 	wget --no-check-certificate -w 4 http://github.com$file -O /tmp/Emby.Mono.zip 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Emby Server v$latest" --gauge "\nPlease wait...\n"  11 70
 	sudo unzip -o /tmp/Emby.Mono.zip -d $EMBY_HOME
 	rm /tmp/Emby.Mono.zip
-	sudo mv /tmp/mediabrowser.current $EMBY_HOME/mediabrowser.current
+	LATEST_VER=$(sudo echo $LATEST_VER | sudo tee $EMBY_HOME/mediabrowser.current)
+	BRANCH=$(sudo echo $BRANCH | sudo tee $EMBY_HOME/mediabrowser.branch)
 	fix_config
 }
 
@@ -249,7 +278,11 @@ function done_installing()
 function upgrade_emby()
 {
 	upgraded=0
-	find_latest_stable
+	if [[ "$BRANCH" == "beta" ]]; then
+		find_latest_beta
+	else
+		find_latest_stable
+	fi
 	if [[ $LATEST_VER > $INSTALLED ]]; then
 		sudo /etc/init.d/emby stop
 		install_emby
@@ -258,37 +291,37 @@ function upgrade_emby()
 	fi
 }
 
-function create_cron_job()
+function toggle_cron_job()
 {
 	#=============================================================================================
-	title "Creating Cron Job for OSMC..."
+	title "Toggling Cron Job status for OSMC..."
 	#=============================================================================================
-	# put a copy of this script in Emby folder and create the cron job:
-	sudo cp $HOME_DIR/install-emby.sh $EMBY_HOME/install-emby.sh
-	crontab -l | { cat | grep -v "install-emby.sh"; echo "@daily $EMBY_HOME/install-emby.sh cron"; } | crontab -
-	dialog --ascii-lines --title "Creating Cron Job for OSMC" --msgbox "\nThe Emby Server Update cron job has been created.\nThe job will run at midnight (12am) on Sunday each week.\nPress OK to return to the menu.\n" 11 70
-
-	# restart script
-	exec $HOME_DIR/install-emby.sh
-}
-
-function remove_cron_job()
-{
-	#=============================================================================================
-	title "Removing Cron Job for OSMC..."
-	#=============================================================================================
-	# put a copy of this script in Emby folder and create the cron job
-	sudo rm $EMBY_HOME/install-emby.sh
-	crontab -l | { cat | grep -v "install-emby.sh"; } | crontab -
-	dialog --ascii-lines --title "Removing Cron Job for OSMC" --msgbox "\nThe Emby Server Update cron job has been removed.\nPress OK to return to the menu.\n" 11 70
+	exists=$(cat | grep "install-emby.sh")
+	if [[ $exists == "" ]]; then
+		# put a copy of this script in Emby folder and create the cron job:
+		sudo cp $HOME_DIR/install-emby.sh $EMBY_HOME/install-emby.sh
+		crontab -l | { cat | grep -v "install-emby.sh"; echo "@daily $EMBY_HOME/install-emby.sh cron"; } | crontab -
+		dialog --ascii-lines --title "Creating Cron Job for OSMC" --msgbox "\nThe Emby Server Update cron job has been created.\nThe job will run at midnight (12am) on Sunday each week.\nPress OK to return to the menu.\n" 11 70
+	else
+		# put a copy of this script in Emby folder and create the cron job
+		sudo rm $EMBY_HOME/install-emby.sh
+		crontab -l | { cat | grep -v "install-emby.sh"; } | crontab -
+		dialog --ascii-lines --title "Removing Cron Job for OSMC" --msgbox "\nThe Emby Server Update cron job has been removed.\nPress OK to return to the menu.\n" 11 70
+	fi	
 
 	# restart script
 	exec $HOME_DIR/install-emby.sh
 }
 
 # ==================================================================
-# Figure out what version of Emby Server we are running:
+# Set up some variables for the script:
 # ==================================================================
+# Determine home folder:
+OLD_PATH=$(pwd)
+cd ~
+HOME_DIR=$(pwd)
+
+# What version of Emby are we running?
 INSTALLED=
 if [[ -f $EMBY_HOME/mediabrowser.current ]]; then
 	INSTALLED=$(cat $EMBY_HOME/mediabrowser.current)
@@ -300,6 +333,9 @@ else
 		sudo mv /tmp/mediabrowser.current $EMBY_HOME/mediabrowser.current
 	fi
 fi
+
+# Which branch are we running?  Assume Stable if not specified:
+BRANCH=$(test -f $EMBY_HOME/mediabrowser.branch && cat $EMBY_HOME/mediabrowser.branch || echo 'stable')
 
 # ==================================================================
 # Are we requesting a CRON job to be done?
@@ -313,53 +349,72 @@ fi
 # Display the menu, then execute selected option:
 # ==================================================================
 title "Emby Server installation - Version $VERSION"
-cmd=(dialog --ascii-lines --cancel-label "Exit" --backtitle "Simple Emby Server Installer - Version $VERSION" --menu "Welcome to the Simple Emby Server Installer.\nWhat would you like to do?\n " 14 50 16)
+cmd=(dialog --ascii-lines --cancel-label "Exit" --backtitle "Simple Emby Server Installer - Version $VERSION" --menu "Welcome to the Simple Emby Server Installer.\nWhat would you like to do?\n " 18 50 16)
+opt1=
 if [[ -f $EMBY_HOME/mediabrowser.current ]]; then
 	options=(
-		1 "Install Emby Server & Kodi Add-Ons"
+		1 "Install Emby Server and support packages"
 		2 "Update this script to latest version"
-		3 "Add Cron job for Automatic Emby Updates"
+		3 "Toggle Cron job for automatic Emby Updates"
 		4 "Update Emby Server to latest version"
+		5 "Install Emby for Kodi add-ons"
+		6 "Change Emby Server installation branch"
 	)
 else
 	options=(
-		1 "Install Emby Server & Kodi Add-Ons"
+		1 "Install Emby Server"
 		2 "Update this script to latest version"
 	)
 fi
-choices=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
-for choice in $choices
-do
-    case $choice in
-		1)	# install everything at this point!
-			install_prerequisites
-			install_dependencies
-			build_ffmpeg
-			install_mono
-			install_emby
-			create_service
+choice=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
+case $choice in
+	1)	# install everything at this point!
+		make_choice
+		install_prerequisites
+		install_dependencies
+		build_ffmpeg
+		install_mono
+		install_emby
+		create_service
+		if [[ -d $HOME_DIR/.kodi ]]; then
 			install_addons
-			done_installing
-			;;
+		fi
+		done_installing
+		;;
 
-		2)	# update this script!
-			update_script
-			;;
+	2)	# update this script!
+		update_script
+		;;
 
-		3)	# create cron job for updating Emby
-			create_cron_job
-			;;
+	3)	# create/remove cron job for updating Emby
+		toggle_cron_job
+		;;
 
-		4)	# if newer version is available, stop Emby and upgrade!
-			upgrade_emby
-			if [[ $upgraded == 0 ]]; then
-				dialog --ascii-lines --title "Update Emby Server" --msgbox "\nYour Emby Server is up to date!.\nPress OK to return to the menu.\n" 11 70
-			fi
-			if [[ $upgraded == 1 ]]; then
-				dialog --ascii-lines --title "Update Emby Server" --msgbox "\nYour Emby Server has been upgraded to v$LATEST_VER.\nPress OK to return to the menu.\n" 11 70
-			fi
-			exec $HOME_DIR/install-emby.sh
-			;;
-    esac
-done
+	4)	# if newer version is available, stop Emby and upgrade!
+		upgrade_emby
+		if [[ $upgraded == 0 ]]; then
+			dialog --ascii-lines --title "Update Emby Server" --msgbox "\nYour Emby Server is up to date!.\nPress OK to return to the menu.\n" 11 70
+		fi
+		if [[ $upgraded == 1 ]]; then
+			dialog --ascii-lines --title "Update Emby Server" --msgbox "\nYour Emby Server has been upgraded to v$LATEST_VER.\nPress OK to return to the menu.\n" 11 70
+		fi
+		exec $HOME_DIR/install-emby.sh
+		;;
+
+	5)	# install everything at this point!
+		if [[ -d $HOME_DIR/.kodi ]]; then
+			install_addons
+		else
+			dialog --ascii-lines --title "Install Emby for Kodi Addons" --msgbox "\nYour Kodi install could not be found at \"$EMBY_HOME\".\nThe add-ons were not installed.\nPress OK to return to the menu.\n" 11 70
+		fi
+		exec $HOME_DIR/install-emby.sh
+		;;
+		
+	6)	# Reinstall Emby Server only:
+		make_choice
+		install_emby
+		create_service
+		done_installing
+		;;
+esac
 clear

@@ -1,3 +1,12 @@
+v0.5 - August 1st, 2016
+o Changed home path variable to detection of user's home folder.
+o Changed start menu to only "Install Emby" and "Update Script" if Emby not found.
+o Changed Emby installer to install addons only if Kodi is detected.
+o Changed "Add Cron" menu option to toggle status of Cron job.
+o Added option to install just Kodi add-ons.  Returns error if Kodi not detected.
+o Added option to select stable or beta branch of Emby Server to use.
+o Added option to change branch of Emby Server in use.
+
 v0.4 - July 30th, 2016
 o Fixed updating script to pull from correct URL.
 
