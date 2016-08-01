@@ -1,3 +1,7 @@
+v0.6 - August 1st, 2016
+o Fixed error installing prerequisite packages.
+o Changed code to attempt automatic detection of appropriate Emby configuration.
+
 v0.5 - August 1st, 2016
 o Changed home path variable to detection of user's home folder.
 o Changed start menu to only "Install Emby" and "Update Script" if Emby not found.

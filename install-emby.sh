@@ -6,7 +6,7 @@
 # Server to OSMC.  I am not responsible for any harm done to        #
 # your system.  Using this script is done at your own risk.         #
 #===================================================================#
-VERSION=0.5
+VERSION=0.6
 EMBY_HOME=/opt/mediabrowser
 PID_FILE=$EMBY_HOME/mediabrowser.pid
 MONO_DIR=/usr/bin
@@ -42,31 +42,33 @@ function title()
 function fix_config()
 {
 	# ==================================================================
-	# Fixing Emby configuration files happens here:
-	# Needs more work for it to work properly in all cases:
+	title "Fixing Emby configuration files and environment"
 	# ==================================================================
+	# Determine where the files that we need:
+	dpkg-query -f '${binary:Package}\n' -W > /tmp/packages.list
+	sqlite=$(basename $(dpkg -L $(cat /tmp/packages.list | grep 'sqlite3') | grep '/arm-linux-gnueabihf/' | sort | grep -m 1 'sq'))
+	media=$(basename $(dpkg -L $(cat /tmp/packages.list | grep 'mediainfo') | grep '/arm-linux-gnueabihf/' | sort | grep -m 1 'media'))
+	magic=$(basename $(dpkg -L $(cat /tmp/packages.list | grep 'libmagickwand') | grep '/arm-linux-gnueabihf/' | sort | grep -m 1 '.so'))
+	rm /tmp/packages.list
+
+	# Here we fix the Emby configuration files:
 	echo "<configuration>" > /tmp/ImageMagickSharp.dll.config
-	echo "  <dllmap dll=\"CORE_RL_Wand_.dll\" target=\"libMagickWand-6.Q16.so.2\" os=\"linux\"/>" >> /tmp/ImageMagickSharp.dll.config
-	echo "  <dllmap dll=\"CORE_RL_Wand_.dll\" target=\"libMagickWand-6.so\" os=\"freebsd,openbsd,netbsd\"/>" >> /tmp/ImageMagickSharp.dll.config
-	echo "  <dllmap dll=\"CORE_RL_Wand_.dll\" target=\"./MediaInfo/osx/libmediainfo.dylib\" os=\"osx\"/>" >> /tmp/ImageMagickSharp.dll.config
+	echo "  <dllmap dll=\"CORE_RL_Wand_.dll\" target=\"$magic\" os=\"linux\"/>" >> /tmp/ImageMagickSharp.dll.config
 	echo "</configuration>" >> /tmp/ImageMagickSharp.dll.config
 	sudo mv /tmp/ImageMagickSharp.dll.config $EMBY_HOME/ImageMagickSharp.dll.config
 
 	echo "<configuration>" > /tmp/System.Data.SQLite.dll.config
-	echo "  <dllmap dll=\"sqlite3\" target=\"libsqlite3.so.0\" os=\"linux\"/>" >> /tmp/System.Data.SQLite.dll.config
+	echo "  <dllmap dll=\"sqlite3\" target=\"$sqlite\" os=\"linux\"/>" >> /tmp/System.Data.SQLite.dll.config
 	echo "</configuration>" >> /tmp/System.Data.SQLite.dll.config
 	sudo mv /tmp/System.Data.SQLite.dll.config $EMBY_HOME/System.Data.SQLite.dll.config
 
-	echo "<configuration>" > /tmp/MediaBrowser.MediaInfo.dll.config
-	echo "  <dllmap dll=\"MediaInfo\" target=\"./MediaInfo/osx/libmediainfo.dylib\" os=\"osx\"/>" >> /tmp/MediaBrowser.MediaInfo.dll.config
-	echo "  <dllmap dll=\"MediaInfo\" target=\"libmediainfo.so.0\" os=\"linux\"/>" >> /tmp/MediaBrowser.MediaInfo.dll.config
-	echo "</configuration>" >> /tmp/MediaBrowser.MediaInfo.dll.config
-	sudo mv /tmp/MediaBrowser.MediaInfo.dll.config $EMBY_HOME/MediaBrowser.MediaInfo.dll.config
+	echo "<configuration>" > /tmp/MediaBrowser.media.dll.config
+	echo "  <dllmap dll=\"media\" target=\"$media\" os=\"linux\"/>" >> /tmp/MediaBrowser.media.dll.config
+	echo "</configuration>" >> /tmp/MediaBrowser.media.dll.config
+	sudo mv /tmp/MediaBrowser.media.dll.config $EMBY_HOME/MediaBrowser.media.dll.config
 	
-	# ==================================================================
-	# Fix TimeZone issue found by Toast on OSMC discussion board
-	# ==================================================================
-	 sudo sh -c "echo export TZ='\$(cat /etc/timezone)' >> /etc/profile"
+	# Timezone fix for Mono issue (found by Toast on OSMC discussion board)
+	sudo sh -c "echo export TZ='\$(cat /etc/timezone)' >> /etc/profile"
 }
 
 function find_latest_stable()
@@ -119,7 +121,7 @@ function install_prerequisites()
 	# ==================================================================
 	title "Installing prerequisites..."
 	# ==================================================================
-	sudo apt-get --show-progress -y --force-yes install aptitude unzip git build-essential pv dialog --ascii-lines cron-app-osmc 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing prerequisite programs if they are not present" --gauge "\nPlease wait...\n" 11 70
+	sudo apt-get --show-progress -y --force-yes install aptitude unzip git build-essential pv dialog cron-app-osmc 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing prerequisite programs if they are not present" --gauge "\nPlease wait...\n" 11 70
 }
 
 function install_dependencies()
@@ -127,7 +129,7 @@ function install_dependencies()
 	# ==================================================================
 	title "Installing Dependencies...."
 	#=============================================================================================
-	sudo aptitude install imagemagick imagemagick-6.q16 imagemagick-common libimage-magick-perl libimage-magick-q16-perl libmagickcore-6-arch-config libmagickcore-6-headers libmagickcore-6.q16-2 libmagickcore-6.q16-2-extra libmagickcore-6.q16-dev libmagickwand-6-headers libmagickwand-6.q16-2 libmagickwand-6.q16-dev libmagickwand-dev webp mediainfo sqlite3
+	sudo aptitude install imagemagick imagemagick-6.q16 imagemagick-common libimage-magick-perl libimage-magick-q16-perl libmagickcore-6-arch-config libmagickcore-6-headers libmagickcore-6.q16-2 libmagickcore-6.q16-2-extra libmagickcore-6.q16-dev libmagickwand-6-headers libmagickwand-6.q16-2 libmagickwand-6.q16-dev libmagickwand-dev webp media sqlite3
 }
 
 function build_ffmpeg()
@@ -170,7 +172,7 @@ function install_emby()
 	# ==================================================================
 	title "Getting latest version of Emby from GitHub..."
 	# ==================================================================
-	if [[ "$BRANCH" == "beta" ]]; then
+	if [ "$BRANCH" == "beta" ]]; then
 		find_latest_beta
 	else
 		find_latest_stable
@@ -368,7 +370,7 @@ else
 fi
 choice=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
 case $choice in
-	1)	# install everything at this point!
+	1)	# Install Emby Server and support packages:
 		make_choice
 		install_prerequisites
 		install_dependencies
@@ -382,15 +384,15 @@ case $choice in
 		done_installing
 		;;
 
-	2)	# update this script!
+	2)	# Update this script to latest version
 		update_script
 		;;
 
-	3)	# create/remove cron job for updating Emby
+	3)	# Toggle Cron job for automatic Emby Updates
 		toggle_cron_job
 		;;
 
-	4)	# if newer version is available, stop Emby and upgrade!
+	4)	# Update Emby Server to latest version
 		upgrade_emby
 		if [[ $upgraded == 0 ]]; then
 			dialog --ascii-lines --title "Update Emby Server" --msgbox "\nYour Emby Server is up to date!.\nPress OK to return to the menu.\n" 11 70
@@ -401,7 +403,7 @@ case $choice in
 		exec $HOME_DIR/install-emby.sh
 		;;
 
-	5)	# install everything at this point!
+	5)	# Install Emby for Kodi add-ons
 		if [[ -d $HOME_DIR/.kodi ]]; then
 			install_addons
 		else
@@ -410,7 +412,7 @@ case $choice in
 		exec $HOME_DIR/install-emby.sh
 		;;
 		
-	6)	# Reinstall Emby Server only:
+	6)	# Change Emby Server installation branch:
 		make_choice
 		install_emby
 		create_service
