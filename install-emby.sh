@@ -6,7 +6,7 @@
 # Server to OSMC.  I am not responsible for any harm done to        #
 # your system.  Using this script is done at your own risk.         #
 #===================================================================#
-VERSION=0.6
+VERSION=0.7
 EMBY_HOME=/opt/mediabrowser
 PID_FILE=$EMBY_HOME/mediabrowser.pid
 MONO_DIR=/usr/bin
@@ -121,7 +121,7 @@ function install_prerequisites()
 	# ==================================================================
 	title "Installing prerequisites..."
 	# ==================================================================
-	sudo apt-get --show-progress -y --force-yes install aptitude unzip git build-essential pv dialog cron-app-osmc 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing prerequisite programs if they are not present" --gauge "\nPlease wait...\n" 11 70
+	sudo apt-get --show-progress -y --force-yes install unzip git build-essential dialog cron-app-osmc lsb-release 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing prerequisite programs if they are not present" --gauge "\nPlease wait...\n" 11 70
 }
 
 function install_dependencies()
@@ -129,7 +129,7 @@ function install_dependencies()
 	# ==================================================================
 	title "Installing Dependencies...."
 	#=============================================================================================
-	sudo aptitude install imagemagick imagemagick-6.q16 imagemagick-common libimage-magick-perl libimage-magick-q16-perl libmagickcore-6-arch-config libmagickcore-6-headers libmagickcore-6.q16-2 libmagickcore-6.q16-2-extra libmagickcore-6.q16-dev libmagickwand-6-headers libmagickwand-6.q16-2 libmagickwand-6.q16-dev libmagickwand-dev webp media sqlite3
+	sudo apt-get --show-progress -y --force-yes install imagemagick imagemagick-6.q16 imagemagick-common libimage-magick-perl libimage-magick-q16-perl libmagickcore-6-arch-config libmagickcore-6-headers libmagickcore-6.q16-2 libmagickcore-6.q16-2-extra libmagickcore-6.q16-dev libmagickwand-6-headers libmagickwand-6.q16-2 libmagickwand-6.q16-dev libmagickwand-dev webp mediainfo sqlite3 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing dependencies if they are not present" --gauge "\nPlease wait...\n" 11 70
 }
 
 function build_ffmpeg()
@@ -137,7 +137,7 @@ function build_ffmpeg()
 	#=============================================================================================
 	title "Building and installing FFmpeg...."
 	#=============================================================================================
-	sudo aptitude remove ffmpeg
+	sudo apt-get --show-progress -y --force-yes remove ffmpeg 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing dependencies if they are not present" --gauge "\nPlease wait...\n" 11 70
 	cd /usr/src
 	if [[ -d /usr/src/ffmpeg ]]; then
 		sudo rm -R /usr/src/ffmpeg
@@ -157,14 +157,25 @@ function install_mono()
 	# ==================================================================
 	title "Installing Mono libraries..."
 	# ==================================================================
-	sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
-	echo "deb http://download.mono-project.com/repo/debian wheezy main" | sudo tee /etc/apt/sources.list.d/mono-xamarin.list
-	test $(cat /etc/debian_version) > 7.999999 && (
-        echo "deb http://download.mono-project.com/repo/debian wheezy-apache24-compat main" | sudo tee -a /etc/apt/sources.list.d/mono-xamarin.list;
-		echo "deb http://download.mono-project.com/repo/debian wheezy-libjpeg62-compat main" | sudo tee -a /etc/apt/sources.list.d/mono-xamarin.list;
-	)
+	OS=$(lsb_release -si)
+	Release=$(lsb_release -sr)
+	#sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
+	echo "deb http://download.mono-project.com/repo/debian wheezy main" > /tmp/mono-xamarin.list
+	if [ $OS == "Ubuntu" ]; then
+		if [ $(lsb_release -sr) > 12.99999 ]; then
+			echo "deb http://download.mono-project.com/repo/debian wheezy-apache24-compat main" >> /tmp/mono-xamarin.list
+		else
+			echo "deb http://download.mono-project.com/repo/debian wheezy-libtiff-compat main"  >> /tmp/mono-xamarin.list/etc/apt/sources.list.d/mono-xamarin.list
+		fi
+	elif [ $OS == "Debian" ]; then
+		if [ $(lsb_release -sr) > 7.99999 ]; then
+			echo "deb http://download.mono-project.com/repo/debian wheezy-apache24-compat main" >> /tmp/mono-xamarin.list
+			echo "deb http://download.mono-project.com/repo/debian wheezy-libjpeg62-compat main" >> /tmp/mono-xamarin.list
+		fi
+	fi
+	sudo mv /tmp/mono-xamarin.list /etc/apt/sources.list.d/mono-xamarin.list
 	sudo apt-get update 2>&1 | dialog --ascii-lines --title "Updating package database..." --infobox "\nPlease wait...\n" 11 70
-	sudo apt-get --show-progress -y install mono-complete 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing Mono libraries if they are not present" --gauge "\nPlease wait...\n" 11 70
+	sudo apt-get --show-progress -y --force-yes install mono-complete 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing Mono libraries if they are not present" --gauge "\nPlease wait...\n" 11 70
 }
 
 function install_emby()
@@ -247,7 +258,7 @@ function get_addon()
 	# ==================================================================
     file=$(curl -s $1 | sed -n 's/.*href="\([^"]*\).*/\1/p' | grep "$2")
     wget --no-check-certificate -w 4 $1/$file -O /tmp/$file 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Addon" --gauge "\nPlease wait...\n"  $
-    unzip /tmp/$file -d $HOME_DIR/.kodi/addons
+    unzip -o /tmp/$file -d $HOME_DIR/.kodi/addons
     mv /tmp/$file $HOME_DIR/.kodi/addons/packages/$file
 }
 
@@ -268,6 +279,11 @@ function install_addons()
 	get_addon $dir/plugin.video.emby.movies/ plugin.video.emby.movies
 	get_addon $dir/plugin.video.emby.musicvideos/ plugin.video.emby.musicvideos
 	get_addon $dir/plugin.video.emby.tvshows/ plugin.video.emby.tvshows
+	
+	# need to shutdown Kodi, then restart so that Kodi sees the new add-ons:
+	sudo service mediacenter stop
+	sleep 1
+	sudo service mediacenter start
 }
 
 function done_installing()
@@ -298,8 +314,7 @@ function toggle_cron_job()
 	#=============================================================================================
 	title "Toggling Cron Job status for OSMC..."
 	#=============================================================================================
-	exists=$(cat | grep "install-emby.sh")
-	if [[ $exists == "" ]]; then
+	if [[ $(crontab -l | grep "install-emby.sh") == "" ]]; then
 		# put a copy of this script in Emby folder and create the cron job:
 		sudo cp $HOME_DIR/install-emby.sh $EMBY_HOME/install-emby.sh
 		crontab -l | { cat | grep -v "install-emby.sh"; echo "@daily $EMBY_HOME/install-emby.sh cron"; } | crontab -
@@ -315,11 +330,74 @@ function toggle_cron_job()
 	exec $HOME_DIR/install-emby.sh
 }
 
+function move_to_usbkey()
+{
+	#==============================================================================================
+	# Code Source: http://unix.stackexchange.com/questions/60299/how-to-determine-which-sd-is-usb
+	#==============================================================================================	
+	# Figure out which USB stick we're going to use:
+	#==============================================================================================
+	USBKEYS=($(
+		grep -Hv ^0$ /sys/block/*/removable |
+		sed s/removable:.*$/device\\/uevent/ |
+		xargs grep -H ^DRIVER=sd |
+		sed s/device.uevent.*$/size/ |
+		xargs grep -Hv ^0$ |
+		cut -d / -f 4
+	))
+	case ${#USBKEYS[@]} in
+		0) # No USB sticks found:
+			dialog --ascii-lines --title "Simple Emby Server Installer" --msgbox "\nNo USB sticks were found.\nPress OK to return to the menu.\n" 8 40
+			return
+			;;
+		1) # Use the only USB stick we found:
+			STICK=$USBKEYS 
+			;;
+		*)	# Let user choose between the USB sticks we found:
+			STICK=$(
+				bash -c "$(
+					echo -n  dialog --menu \"Choose which USB stick to copy to:\" 22 76 17;
+					for dev in ${USBKEYS[@]} ;do
+						echo -n \ $dev \"$(sed -e s/\ *$//g </sys/block/$dev/device/model)\" ;
+					done
+				)" 2>&1 >/dev/tty
+			)
+			;;
+	esac
+	[ "$STICK" ] || return
+
+	# Figure out which partition on selected USB stick we're going to use:
+	#==============================================================================================
+	df --output=source,target /dev/$STICK* | grep "/dev/$STICK" > /tmp/partitions.txt
+	PARTS=$(wc -l < /tmp/partitions.txt)
+	case $PARTS in
+		0) # No USB sticks found:
+			dialog --ascii-lines --title "Simple Emby Server Installer" --msgbox "\nNo USB partitions were found.\nPress OK to return to the menu.\n" 8 40
+			return
+			;;
+		1) # Use the only USB stick we found:
+			PART=$(cat /tmp/partitions.txt | cut -d" " -f1)
+			;;
+
+		*)	# Let user choose between the USB partitions we found:
+			STICK=$(
+				bash -c "$(
+					echo -n  dialog --menu \"Choose which USB partition to copy to:\" 22 76 17;
+					cat /tmp/partitions.txt
+				)" 2>&1 >/dev/tty
+			)
+			;;
+	esac
+	[ "$PART" ] || return
+
+	echo $PART
+}
+#move_to_usbkey; exit;
+
 # ==================================================================
 # Set up some variables for the script:
 # ==================================================================
 # Determine home folder:
-OLD_PATH=$(pwd)
 cd ~
 HOME_DIR=$(pwd)
 
@@ -361,6 +439,7 @@ if [[ -f $EMBY_HOME/mediabrowser.current ]]; then
 		4 "Update Emby Server to latest version"
 		5 "Install Emby for Kodi add-ons"
 		6 "Change Emby Server installation branch"
+		7 "Rebuild FFmpeg from Git repository"
 	)
 else
 	options=(
@@ -417,6 +496,11 @@ case $choice in
 		install_emby
 		create_service
 		done_installing
+		;;
+		
+	7)  # Rebuild FFmpeg from Git repository
+		build_ffmpeg
+		exec $HOME_DIR/install-emby.sh
 		;;
 esac
 clear
