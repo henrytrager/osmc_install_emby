@@ -191,7 +191,6 @@ function install_emby()
 	wget --no-check-certificate -w 4 http://github.com$file -O /tmp/Emby.Mono.zip 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Emby Server v$latest" --gauge "\nPlease wait...\n"  11 70
 	sudo unzip -o /tmp/Emby.Mono.zip -d $EMBY_HOME
 	rm /tmp/Emby.Mono.zip
-	LATEST_VER=$(sudo echo $LATEST_VER | sudo tee $EMBY_HOME/mediabrowser.current)
 	BRANCH=$(sudo echo $BRANCH | sudo tee $EMBY_HOME/mediabrowser.branch)
 	fix_config
 }
@@ -219,20 +218,18 @@ function create_service()
 	echo "case \"\$1\" in" >> /tmp/emby
 	echo "	start)" >> /tmp/emby
 	echo "		echo \"Starting Emby server...\"" >> /tmp/emby
-	echo "		start-stop-daemon -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
+	echo "		sudo start-stop-daemon -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
 	echo "		;;" >> /tmp/emby
 	echo "  stop)" >> /tmp/emby
 	echo "		echo \"Stopping Emby server...\"" >> /tmp/emby
-	echo "	  	start-stop-daemon -K -p \${PIDFILE}" >> /tmp/emby
-	echo "		rm $PID_FILE" >> /tmp/emby
+	echo "	  	sudo start-stop-daemon -K -p \${PIDFILE} && sudo rm $PID_FILE" >> /tmp/emby
 	echo "		;;" >> /tmp/emby
 	echo "  restart|force_reload)" >> /tmp/emby
 	echo "		echo \"Stopping Emby server...\"" >> /tmp/emby
-	echo "		start-stop-daemon -K -p \${PIDFILE}" >> /tmp/emby
-	echo "		rm $PID_FILE" >> /tmp/emby
+	echo "		sudo start-stop-daemon -K -p \${PIDFILE} && sudo rm $PID_FILE" >> /tmp/emby
 	echo "		sleep 3" >> /tmp/emby
 	echo "		echo \"Starting Emby server...\"" >> /tmp/emby
-	echo "		start-stop-daemon -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
+	echo "		sudo start-stop-daemon -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
 	echo "    ;;" >> /tmp/emby
 	echo "  *)" >> /tmp/emby
 	echo "    echo \"Usage: /etc/init.d/emby {start|stop|restart|force_reload}\"" >> /tmp/emby
@@ -242,13 +239,14 @@ function create_service()
 	sudo echo "exit 0" >> /tmp/emby
 
 	# Move the new service file into position and activate it:
+	sudo rm /etc/init.d/emby
 	sudo mv /tmp/emby /etc/init.d/emby
 	sudo chmod 755 /etc/init.d/emby
 	sudo update-rc.d emby defaults
 	sudo /etc/init.d/emby start
 
 	# Add cron task to remove "mediabrowser-server.pid" after reboot:
-	crontab -l | { cat | grep -v "$PID_FILE"; echo "@reboot rm $PID_FILE"; } | crontab -
+	crontab -l | { cat | grep -v "$PID_FILE"; echo "@reboot sudo rm $PID_FILE"; } | crontab -
 }
 
 function get_addon()
@@ -257,7 +255,7 @@ function get_addon()
 	# Get the addon, unzip, then move the zip to the package store of OSMC
 	# ==================================================================
     file=$(curl -s $1 | sed -n 's/.*href="\([^"]*\).*/\1/p' | grep "$2")
-    wget --no-check-certificate -w 4 $1/$file -O /tmp/$file 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Addon" --gauge "\nPlease wait...\n"  $
+    wget --no-check-certificate -w 4 $1/$file -O /tmp/$file 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Addon" --gauge "\nPlease wait...\n" 11 70
     unzip -o /tmp/$file -d $HOME_DIR/.kodi/addons
     mv /tmp/$file $HOME_DIR/.kodi/addons/packages/$file
 }
@@ -288,8 +286,7 @@ function install_addons()
 
 function done_installing()
 {
-	ip="hostname -I"
-	dialog --ascii-lines --title "FINISHED!" --msgbox "\nYour Emby Server should now be available for you at http://$ip:8096\nPress OK to return to the menu.\n" 11 70
+	dialog --ascii-lines --title "FINISHED!" --msgbox "\nYour Emby Server should now be available for you at http://$(hostname -I):8096\nPress OK to return to the menu.\n" 11 70
 	exec $HOME_DIR/install-emby.sh
 }
 
@@ -302,10 +299,12 @@ function upgrade_emby()
 		find_latest_stable
 	fi
 	if [[ $LATEST_VER > $INSTALLED ]]; then
-		sudo /etc/init.d/emby stop
-		install_emby
-		create_service
-		upgraded=1
+		sudo start-stop-daemon -K -p $PID_FILE && (
+			sudo rm $PID_FILE
+			install_emby
+			create_service
+			upgraded=1
+		)
 	fi
 }
 
@@ -330,7 +329,10 @@ function toggle_cron_job()
 	exec $HOME_DIR/install-emby.sh
 }
 
-function move_to_usbkey()
+# ==================================================================
+# Functions that deal with moving Emby data to a USB stick:
+# ==================================================================
+function select_usbkey()
 {
 	#==============================================================================================
 	# Code Source: http://unix.stackexchange.com/questions/60299/how-to-determine-which-sd-is-usb
@@ -369,14 +371,13 @@ function move_to_usbkey()
 	# Figure out which partition on selected USB stick we're going to use:
 	#==============================================================================================
 	df --output=source,target /dev/$STICK* | grep "/dev/$STICK" > /tmp/partitions.txt
-	PARTS=$(wc -l < /tmp/partitions.txt)
-	case $PARTS in
+	case $(wc -l < /tmp/partitions.txt) in
 		0) # No USB sticks found:
 			dialog --ascii-lines --title "Simple Emby Server Installer" --msgbox "\nNo USB partitions were found.\nPress OK to return to the menu.\n" 8 40
 			return
 			;;
 		1) # Use the only USB stick we found:
-			PART=$(cat /tmp/partitions.txt | cut -d" " -f1)
+			STICK=$(cat /tmp/partitions.txt | cut -d" " -f1)
 			;;
 
 		*)	# Let user choose between the USB partitions we found:
@@ -388,11 +389,54 @@ function move_to_usbkey()
 			)
 			;;
 	esac
-	[ "$PART" ] || return
-
-	echo $PART
+	rm /tmp/partitions.txt
+	[ "$STICK" ] || return
 }
 #move_to_usbkey; exit;
+
+# ==================================================================
+# Function to retrieve & process file for ImagesByName project...
+# ==================================================================
+function get_imagesbyname()
+{
+	#=============================================================================================
+	title "Retrieving file for ImagesByName project..."
+	#=============================================================================================
+	TMP=/opt/mediabrowser/ProgramData-Server/temp
+	#sudo mkdir -p $TMP >& /dev/null
+	#sudo wget --no-check-certificate -w 4 -O $TMP/IBN_People_Wave_1.7z https://dl.dropbox.com/s/ip3zvo3uxy5knp0/IBN_People_Wave_1.7z?dl=1 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading \"IBN_People_Wave_1.7z\"" --gauge "\nPlease wait...\n" 11 70
+	#sudo 7za x -y -o$TMP $TMP/IBN_People_Wave_1.7z
+
+	#=============================================================================================
+	title "Resetting file permissions on metadata folder..."
+	#=============================================================================================
+	LINE=$(sudo ls -l /opt/mediabrowser/ProgramData-Server/ | grep 'metadata')
+	sudo chown -R $(echo $LINE | cut -d' ' -f 4):$(echo $LINE | cut -d' ' -f 5) $TMP
+
+	#=============================================================================================
+	title "Move images of people around..."
+	#=============================================================================================
+	TMP=$TMP/People
+	PPL=/opt/mediabrowser/ProgramData-Server/metadata/People
+	TOTAL=$(sudo ls -1 $TMP | tee /tmp/filelist.txt | wc -l)
+	COUNT=0
+	cat /tmp/filelist.txt | (while read -r line
+	do
+		DST=$(echo $line | tr "'" " " | tr "  " " ")
+		DST="${DST// mc/ mc }"
+		DST="${DST//\./\.\ }"7
+		DST="$(echo $DST | sed -e 's/^./\U&/g; s/ ./\U&/g')"
+		DST="${DST// Mc / Mc}"
+		DST="${DST//\.\ \ /\.\ }"
+		echo $(( $COUNT*100/$TOTAL ))\%: Processing "$DST"...
+		COUNT=$(( $COUNT+1 ))
+		LTR=$(echo $DST | cut -c 1 | sed -e 's/^./\U&/g; s/ ./\U&/g')
+		sudo mkdir -p $PPL/$LTR/"$DST" >& /dev/null
+		sudo mv $TMP/"$line"/*.jpg $PPL/$LTR/"$DST"/poster.jpg && sudo rm -R $TMP/"$line"
+	done)
+	#done) | dialog --title "Moving images into correct folders..." --gauge "\nPlease wait...\n" 11 70
+	sudo rm -R /opt/mediabrowser/ProgramData-Server/temp
+}
 
 # ==================================================================
 # Set up some variables for the script:
@@ -403,15 +447,11 @@ HOME_DIR=$(pwd)
 
 # What version of Emby are we running?
 INSTALLED=
-if [[ -f $EMBY_HOME/mediabrowser.current ]]; then
-	INSTALLED=$(cat $EMBY_HOME/mediabrowser.current)
-else
-	if [[ -f $EMBY_HOME/ProgramData-Server/config/system.xml ]]; then
-		url=http://$(echo $(hostname -I)):$(echo $(cat $EMBY_HOME/ProgramData-Server/config/system.xml | grep "HttpServerPortNumber" | sed -e 's/<[a-zA-Z\/][^>]*>//g'))
-		INSTALLED=$(curl -s $url/web/login.html | sed -n 's/.*window.dashboardVersion=\([^"]*\).*/\1/p' | cut -d";" -f1)
-		INSTALLED=$(echo ${INSTALLED//\'/} | tee /tmp/mediabrowser.current)
-		sudo mv /tmp/mediabrowser.current $EMBY_HOME/mediabrowser.current
-	fi
+if [[ -f $EMBY_HOME/ProgramData-Server/config/system.xml ]]; then
+	url=http://$(echo $(hostname -I)):$(echo $(cat $EMBY_HOME/ProgramData-Server/config/system.xml | grep "HttpServerPortNumber" | sed -e 's/<[a-zA-Z\/][^>]*>//g'))
+	INSTALLED=$(curl -s $url/web/login.html | sed -n 's/.*window.dashboardVersion=\([^"]*\).*/\1/p' | cut -d";" -f1)
+	INSTALLED=$(echo ${INSTALLED//\'/} | tee /tmp/mediabrowser.current)
+	sudo mv /tmp/mediabrowser.current $EMBY_HOME/mediabrowser.current
 fi
 
 # Which branch are we running?  Assume Stable if not specified:
@@ -431,7 +471,12 @@ fi
 title "Emby Server installation - Version $VERSION"
 cmd=(dialog --ascii-lines --cancel-label "Exit" --backtitle "Simple Emby Server Installer - Version $VERSION" --menu "Welcome to the Simple Emby Server Installer.\nWhat would you like to do?\n " 18 50 16)
 opt1=
-if [[ -f $EMBY_HOME/mediabrowser.current ]]; then
+if [ "$INSTALLED" == "" ]]; then
+	options=(
+		1 "Install Emby Server"
+		2 "Update this script to latest version"
+	)
+else
 	options=(
 		1 "Install Emby Server and support packages"
 		2 "Update this script to latest version"
@@ -440,11 +485,6 @@ if [[ -f $EMBY_HOME/mediabrowser.current ]]; then
 		5 "Install Emby for Kodi add-ons"
 		6 "Change Emby Server installation branch"
 		7 "Rebuild FFmpeg from Git repository"
-	)
-else
-	options=(
-		1 "Install Emby Server"
-		2 "Update this script to latest version"
 	)
 fi
 choice=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)

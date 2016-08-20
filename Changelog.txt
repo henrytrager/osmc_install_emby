@@ -1,3 +1,7 @@
+v0.8 - August 9th, 2016
+o Changed Emby version detection to avoid storing version in seperate file.
+o Changed Emby service file to use sudo to start/stop service and remove PID file.
+
 v0.7 - August 5th, 2016
 o Fixed function to toggle status of auto-updating cron job.
 o Changed code to attempt to install Mono for Debian < 8 and Ubuntu.
