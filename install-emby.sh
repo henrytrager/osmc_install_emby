@@ -6,8 +6,10 @@
 # Server to OSMC.  I am not responsible for any harm done to        #
 # your system.  Using this script is done at your own risk.         #
 #===================================================================#
-VERSION=0.7
+VERSION=0.8
 EMBY_HOME=/opt/mediabrowser
+EMBY_NEW=/opt/mediabrowser.new
+EMBY_NEW=/opt/mediabrowser.old
 PID_FILE=$EMBY_HOME/mediabrowser.pid
 MONO_DIR=/usr/bin
 
@@ -55,17 +57,17 @@ function fix_config()
 	echo "<configuration>" > /tmp/ImageMagickSharp.dll.config
 	echo "  <dllmap dll=\"CORE_RL_Wand_.dll\" target=\"$magic\" os=\"linux\"/>" >> /tmp/ImageMagickSharp.dll.config
 	echo "</configuration>" >> /tmp/ImageMagickSharp.dll.config
-	sudo mv /tmp/ImageMagickSharp.dll.config $EMBY_HOME/ImageMagickSharp.dll.config
+	sudo mv /tmp/ImageMagickSharp.dll.config $EMBY_NEW/ImageMagickSharp.dll.config
 
 	echo "<configuration>" > /tmp/System.Data.SQLite.dll.config
 	echo "  <dllmap dll=\"sqlite3\" target=\"$sqlite\" os=\"linux\"/>" >> /tmp/System.Data.SQLite.dll.config
 	echo "</configuration>" >> /tmp/System.Data.SQLite.dll.config
-	sudo mv /tmp/System.Data.SQLite.dll.config $EMBY_HOME/System.Data.SQLite.dll.config
+	sudo mv /tmp/System.Data.SQLite.dll.config $EMBY_NEW/System.Data.SQLite.dll.config
 
 	echo "<configuration>" > /tmp/MediaBrowser.media.dll.config
 	echo "  <dllmap dll=\"media\" target=\"$media\" os=\"linux\"/>" >> /tmp/MediaBrowser.media.dll.config
 	echo "</configuration>" >> /tmp/MediaBrowser.media.dll.config
-	sudo mv /tmp/MediaBrowser.media.dll.config $EMBY_HOME/MediaBrowser.media.dll.config
+	sudo mv /tmp/MediaBrowser.media.dll.config $EMBY_NEW/MediaBrowser.media.dll.config
 	
 	# Timezone fix for Mono issue (found by Toast on OSMC discussion board)
 	sudo sh -c "echo export TZ='\$(cat /etc/timezone)' >> /etc/profile"
@@ -183,15 +185,15 @@ function install_emby()
 	# ==================================================================
 	title "Getting latest version of Emby from GitHub..."
 	# ==================================================================
-	if [ "$BRANCH" == "beta" ]]; then
+	if [ "$BRANCH" == "beta" ]; then
 		find_latest_beta
 	else
 		find_latest_stable
 	fi
 	wget --no-check-certificate -w 4 http://github.com$file -O /tmp/Emby.Mono.zip 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Emby Server v$latest" --gauge "\nPlease wait...\n"  11 70
-	sudo unzip -o /tmp/Emby.Mono.zip -d $EMBY_HOME
+	sudo unzip -o /tmp/Emby.Mono.zip -d $EMBY_NEW
 	rm /tmp/Emby.Mono.zip
-	BRANCH=$(sudo echo $BRANCH | sudo tee $EMBY_HOME/mediabrowser.branch)
+	BRANCH=$(sudo echo $BRANCH | sudo tee $EMBY_NEW/mediabrowser.branch)
 	fix_config
 }
 
@@ -214,6 +216,13 @@ function create_service()
 	echo "" >> /tmp/emby
 	echo "PIDFILE=\"$PID_FILE\"" >> /tmp/emby
 	echo "EXEC=\"$EMBY_HOME/MediaBrowser.Server.Mono.exe -ffmpeg /usr/local/share/man/man1/ffmpeg.1 -ffprobe /usr/local/share/man/man1/ffprobe.1\"" >> /tmp/emby
+	echo "" >> /tmp/emby
+	echo "if [[ -d $EMBY_NEW ]]; then" >> /tmp/emby
+	echo "  sudo rm -R $EMBY_OLD" >> /tmp/emby
+	echo "	sudo mv $EMBY_HOME $EMBY_OLD" >> /tmp/emby
+	echo "	sudo mv $EMBY_NEW $EMBY_HOME" >> /tmp/emby
+	echo "	sudo mv $EMBY_OLD/ProgramData-Server $EMBY_HOME/" >> /tmp/emby
+	echo "fi" >> /tmp/emby
 	echo "" >> /tmp/emby
 	echo "case \"\$1\" in" >> /tmp/emby
 	echo "	start)" >> /tmp/emby
@@ -299,12 +308,11 @@ function upgrade_emby()
 		find_latest_stable
 	fi
 	if [[ $LATEST_VER > $INSTALLED ]]; then
-		sudo start-stop-daemon -K -p $PID_FILE && (
-			sudo rm $PID_FILE
-			install_emby
-			create_service
-			upgraded=1
-		)
+		EMBY_HOME=$EMBY_NEW
+		install_emby
+		create_service
+		#reboot
+		upgraded=1
 	fi
 }
 
@@ -469,7 +477,7 @@ fi
 # Display the menu, then execute selected option:
 # ==================================================================
 title "Emby Server installation - Version $VERSION"
-cmd=(dialog --ascii-lines --cancel-label "Exit" --backtitle "Simple Emby Server Installer - Version $VERSION" --menu "Welcome to the Simple Emby Server Installer.\nWhat would you like to do?\n " 18 50 16)
+cmd=(dialog --ascii-lines --cancel-label "Exit" --backtitle "Simple Emby Server Installer - Version $VERSION" --menu "Welcome to the Simple Emby Server Installer.\nWhat would you like to do?\n " 18 50 17)
 opt1=
 if [ "$INSTALLED" == "" ]]; then
 	options=(
@@ -482,9 +490,10 @@ else
 		2 "Update this script to latest version"
 		3 "Toggle Cron job for automatic Emby Updates"
 		4 "Update Emby Server to latest version"
-		5 "Install Emby for Kodi add-ons"
-		6 "Change Emby Server installation branch"
-		7 "Rebuild FFmpeg from Git repository"
+		5 "Restore old copy of Emby Server (if available)"
+		6 "Install Emby for Kodi add-ons"
+		7 "Change Emby Server installation branch"
+		8 "Rebuild FFmpeg from Git repository"
 	)
 fi
 choice=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
@@ -522,7 +531,7 @@ case $choice in
 		exec $HOME_DIR/install-emby.sh
 		;;
 
-	5)	# Install Emby for Kodi add-ons
+	6)	# Install Emby for Kodi add-ons
 		if [[ -d $HOME_DIR/.kodi ]]; then
 			install_addons
 		else
@@ -531,14 +540,14 @@ case $choice in
 		exec $HOME_DIR/install-emby.sh
 		;;
 		
-	6)	# Change Emby Server installation branch:
+	7)	# Change Emby Server installation branch:
 		make_choice
 		install_emby
 		create_service
 		done_installing
 		;;
 		
-	7)  # Rebuild FFmpeg from Git repository
+	8)  # Rebuild FFmpeg from Git repository
 		build_ffmpeg
 		exec $HOME_DIR/install-emby.sh
 		;;
