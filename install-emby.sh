@@ -6,10 +6,10 @@
 # Server to OSMC.  I am not responsible for any harm done to        #
 # your system.  Using this script is done at your own risk.         #
 #===================================================================#
-VERSION=0.8
+VERSION=1.0
 EMBY_HOME=/opt/mediabrowser
 EMBY_NEW=/opt/mediabrowser.new
-EMBY_NEW=/opt/mediabrowser.old
+EMBY_OLD=/opt/mediabrowser.old
 PID_FILE=$EMBY_HOME/mediabrowser.pid
 MONO_DIR=/usr/bin
 
@@ -57,17 +57,17 @@ function fix_config()
 	echo "<configuration>" > /tmp/ImageMagickSharp.dll.config
 	echo "  <dllmap dll=\"CORE_RL_Wand_.dll\" target=\"$magic\" os=\"linux\"/>" >> /tmp/ImageMagickSharp.dll.config
 	echo "</configuration>" >> /tmp/ImageMagickSharp.dll.config
-	sudo mv /tmp/ImageMagickSharp.dll.config $EMBY_NEW/ImageMagickSharp.dll.config
+	sudo mv /tmp/ImageMagickSharp.dll.config $EMBY_HOME/ImageMagickSharp.dll.config
 
 	echo "<configuration>" > /tmp/System.Data.SQLite.dll.config
 	echo "  <dllmap dll=\"sqlite3\" target=\"$sqlite\" os=\"linux\"/>" >> /tmp/System.Data.SQLite.dll.config
 	echo "</configuration>" >> /tmp/System.Data.SQLite.dll.config
-	sudo mv /tmp/System.Data.SQLite.dll.config $EMBY_NEW/System.Data.SQLite.dll.config
+	sudo mv /tmp/System.Data.SQLite.dll.config $EMBY_HOME/System.Data.SQLite.dll.config
 
 	echo "<configuration>" > /tmp/MediaBrowser.media.dll.config
 	echo "  <dllmap dll=\"media\" target=\"$media\" os=\"linux\"/>" >> /tmp/MediaBrowser.media.dll.config
 	echo "</configuration>" >> /tmp/MediaBrowser.media.dll.config
-	sudo mv /tmp/MediaBrowser.media.dll.config $EMBY_NEW/MediaBrowser.media.dll.config
+	sudo mv /tmp/MediaBrowser.media.dll.config $EMBY_HOME/MediaBrowser.media.dll.config
 	
 	# Timezone fix for Mono issue (found by Toast on OSMC discussion board)
 	sudo sh -c "echo export TZ='\$(cat /etc/timezone)' >> /etc/profile"
@@ -94,7 +94,7 @@ function find_latest_beta()
 }
 
 # ==================================================================
-# Functions performing major tasks in this script:
+# Functions performing installation tasks in this script:
 # ==================================================================
 function make_choice()
 {
@@ -131,28 +131,44 @@ function install_dependencies()
 	# ==================================================================
 	title "Installing Dependencies...."
 	#=============================================================================================
-	sudo apt-get --show-progress -y --force-yes install imagemagick imagemagick-6.q16 imagemagick-common libimage-magick-perl libimage-magick-q16-perl libmagickcore-6-arch-config libmagickcore-6-headers libmagickcore-6.q16-2 libmagickcore-6.q16-2-extra libmagickcore-6.q16-dev libmagickwand-6-headers libmagickwand-6.q16-2 libmagickwand-6.q16-dev libmagickwand-dev webp mediainfo sqlite3 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing dependencies if they are not present" --gauge "\nPlease wait...\n" 11 70
+	sudo apt-get --show-progress -y --force-yes install imagemagick imagemagick-6.q16 imagemagick-common libimage-magick-perl libimage-magick-q16-perl libmagickcore-6-arch-config libmagickcore-6-headers libmagickcore-6.q16-2 libmagickcore-6.q16-2-extra libmagickcore-6.q16-dev libmagickwand-6-headers libmagickwand-6.q16-2 libmagickwand-6.q16-dev libmagickwand-dev webp mediainfo sqlite3 libmp3lame-dev libomxil-bellagio-dev 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing dependencies if they are not present" --gauge "\nPlease wait...\n" 11 70
 }
+
+function build_x264()
+{
+	#=============================================================================================
+	title "Building and installing x264 support...."
+	#=============================================================================================
+	if [[ -d /usr/src/x264 ]]; then
+		sudo rm -R /usr/src/x264
+	fi
+	sudo mkdir /usr/src/x264
+	sudo chown `whoami`:users /usr/src/x264
+	sudo git clone git://git.videolan.org/x264 /usr/src/x264
+	cd /usr/src/x264
+	sudo ./configure --host=arm-unknown-linux-gnueabi --enable-static --disable-opencl
+	sudo make
+	sudo make install
+}
+#build_x264; exit;
 
 function build_ffmpeg()
 {
 	#=============================================================================================
 	title "Building and installing FFmpeg...."
 	#=============================================================================================
-	sudo apt-get --show-progress -y --force-yes remove ffmpeg 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing dependencies if they are not present" --gauge "\nPlease wait...\n" 11 70
-	cd /usr/src
 	if [[ -d /usr/src/ffmpeg ]]; then
 		sudo rm -R /usr/src/ffmpeg
 	fi
-	sudo mkdir ffmpeg
-	sudo chown `whoami`:users ffmpeg
-	git clone git://source.ffmpeg.org/ffmpeg.git ffmpeg
-	cd ffmpeg
-	./configure
-	make -j`nproc` && sudo make install
-	cd ~
-	sudo rm -R /usr/src/ffmpeg
+	sudo mkdir /usr/src/ffmpeg
+	sudo chown `whoami`:users /usr/src/ffmpeg
+	git clone git://source.ffmpeg.org/ffmpeg.git /usr/src/ffmpeg
+	cd /usr/src/ffmpeg
+	sudo ./configure --arch=armel --target-os=linux --enable-gpl --enable-libx264 --enable-libmp3lame --enable-omx-rpi --disable-debug --enable-version3 --enable-nonfree
+	sudo make -j4
+	sudo make install
 }
+#build_ffmpeg; exit;
 
 function install_mono()
 {
@@ -160,17 +176,17 @@ function install_mono()
 	title "Installing Mono libraries..."
 	# ==================================================================
 	OS=$(lsb_release -si)
-	Release=$(lsb_release -sr)
-	#sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
+	RELEASE=$(lsb_release -sr)
+	sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF 2>&1 | dialog --ascii-lines --title "Retrieving keys..." --infobox "\nPlease wait...\n" 11 70
 	echo "deb http://download.mono-project.com/repo/debian wheezy main" > /tmp/mono-xamarin.list
 	if [ $OS == "Ubuntu" ]; then
-		if [ $(lsb_release -sr) > 12.99999 ]; then
+		if [[ "$RELEASE" > "12.9999" ]]; then
 			echo "deb http://download.mono-project.com/repo/debian wheezy-apache24-compat main" >> /tmp/mono-xamarin.list
 		else
 			echo "deb http://download.mono-project.com/repo/debian wheezy-libtiff-compat main"  >> /tmp/mono-xamarin.list/etc/apt/sources.list.d/mono-xamarin.list
 		fi
 	elif [ $OS == "Debian" ]; then
-		if [ $(lsb_release -sr) > 7.99999 ]; then
+		if [[ "$RELEASE" > "7.9999" ]]; then
 			echo "deb http://download.mono-project.com/repo/debian wheezy-apache24-compat main" >> /tmp/mono-xamarin.list
 			echo "deb http://download.mono-project.com/repo/debian wheezy-libjpeg62-compat main" >> /tmp/mono-xamarin.list
 		fi
@@ -179,6 +195,7 @@ function install_mono()
 	sudo apt-get update 2>&1 | dialog --ascii-lines --title "Updating package database..." --infobox "\nPlease wait...\n" 11 70
 	sudo apt-get --show-progress -y --force-yes install mono-complete 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Installing Mono libraries if they are not present" --gauge "\nPlease wait...\n" 11 70
 }
+#install_mono; exit;
 
 function install_emby()
 {
@@ -190,12 +207,13 @@ function install_emby()
 	else
 		find_latest_stable
 	fi
-	wget --no-check-certificate -w 4 http://github.com$file -O /tmp/Emby.Mono.zip 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Emby Server v$latest" --gauge "\nPlease wait...\n"  11 70
+	wget --no-check-certificate -w 4 http://github.com$file -O /tmp/Emby.Mono.zip 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Emby Server v$LATEST_VER" --gauge "\nPlease wait...\n"  11 70
 	sudo unzip -o /tmp/Emby.Mono.zip -d $EMBY_NEW
 	rm /tmp/Emby.Mono.zip
 	BRANCH=$(sudo echo $BRANCH | sudo tee $EMBY_NEW/mediabrowser.branch)
 	fix_config
 }
+#install_emby; exit;
 
 function create_service()
 {
@@ -215,30 +233,31 @@ function create_service()
 	echo "### END INIT INFO" >> /tmp/emby
 	echo "" >> /tmp/emby
 	echo "PIDFILE=\"$PID_FILE\"" >> /tmp/emby
-	echo "EXEC=\"$EMBY_HOME/MediaBrowser.Server.Mono.exe -ffmpeg /usr/local/share/man/man1/ffmpeg.1 -ffprobe /usr/local/share/man/man1/ffprobe.1\"" >> /tmp/emby
+	echo "EXEC=\"$EMBY_HOME/MediaBrowser.Server.Mono.exe -ffmpeg /usr/local/bin/ffmpeg -ffprobe /usr/local/bin/ffprobe\"" >> /tmp/emby
+	echo "USER=root" >> /tmp/emby
 	echo "" >> /tmp/emby
 	echo "if [[ -d $EMBY_NEW ]]; then" >> /tmp/emby
 	echo "  sudo rm -R $EMBY_OLD" >> /tmp/emby
-	echo "	sudo mv $EMBY_HOME $EMBY_OLD" >> /tmp/emby
-	echo "	sudo mv $EMBY_NEW $EMBY_HOME" >> /tmp/emby
-	echo "	sudo mv $EMBY_OLD/ProgramData-Server $EMBY_HOME/" >> /tmp/emby
+	echo "  sudo mv $EMBY_HOME $EMBY_OLD" >> /tmp/emby
+	echo "  sudo mv $EMBY_NEW $EMBY_HOME" >> /tmp/emby
+	echo "  sudo mv $EMBY_OLD/ProgramData-Server $EMBY_HOME/" >> /tmp/emby
 	echo "fi" >> /tmp/emby
 	echo "" >> /tmp/emby
 	echo "case \"\$1\" in" >> /tmp/emby
-	echo "	start)" >> /tmp/emby
-	echo "		echo \"Starting Emby server...\"" >> /tmp/emby
-	echo "		sudo start-stop-daemon -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
-	echo "		;;" >> /tmp/emby
+	echo "  start)" >> /tmp/emby
+	echo "    echo \"Starting Emby server...\"" >> /tmp/emby
+	echo "    sudo start-stop-daemon --chuid \$USER -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
+	echo "    ;;" >> /tmp/emby
 	echo "  stop)" >> /tmp/emby
-	echo "		echo \"Stopping Emby server...\"" >> /tmp/emby
-	echo "	  	sudo start-stop-daemon -K -p \${PIDFILE} && sudo rm $PID_FILE" >> /tmp/emby
-	echo "		;;" >> /tmp/emby
+	echo "    echo \"Stopping Emby server...\"" >> /tmp/emby
+	echo "    sudo start-stop-daemon --chuid \$USER -K -p \${PIDFILE} && sudo rm $PID_FILE" >> /tmp/emby
+	echo "    ;;" >> /tmp/emby
 	echo "  restart|force_reload)" >> /tmp/emby
-	echo "		echo \"Stopping Emby server...\"" >> /tmp/emby
-	echo "		sudo start-stop-daemon -K -p \${PIDFILE} && sudo rm $PID_FILE" >> /tmp/emby
-	echo "		sleep 3" >> /tmp/emby
-	echo "		echo \"Starting Emby server...\"" >> /tmp/emby
-	echo "		sudo start-stop-daemon -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
+	echo "    echo \"Stopping Emby server...\"" >> /tmp/emby
+	echo "    sudo start-stop-daemon --chuid \$USER -K -p \${PIDFILE} && sudo rm $PID_FILE" >> /tmp/emby
+	echo "    sleep 3" >> /tmp/emby
+	echo "    echo \"Starting Emby server...\"" >> /tmp/emby
+	echo "    sudo start-stop-daemon --chuid \$USER -S -m -p \$PIDFILE -b -x $MONO_DIR/mono -- \${EXEC}" >> /tmp/emby
 	echo "    ;;" >> /tmp/emby
 	echo "  *)" >> /tmp/emby
 	echo "    echo \"Usage: /etc/init.d/emby {start|stop|restart|force_reload}\"" >> /tmp/emby
@@ -257,36 +276,18 @@ function create_service()
 	# Add cron task to remove "mediabrowser-server.pid" after reboot:
 	crontab -l | { cat | grep -v "$PID_FILE"; echo "@reboot sudo rm $PID_FILE"; } | crontab -
 }
+#create_service; exit;
 
-function get_addon()
-{
-	# ==================================================================
-	# Get the addon, unzip, then move the zip to the package store of OSMC
-	# ==================================================================
-    file=$(curl -s $1 | sed -n 's/.*href="\([^"]*\).*/\1/p' | grep "$2")
-    wget --no-check-certificate -w 4 $1/$file -O /tmp/$file 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Addon" --gauge "\nPlease wait...\n" 11 70
-    unzip -o /tmp/$file -d $HOME_DIR/.kodi/addons
-    mv /tmp/$file $HOME_DIR/.kodi/addons/packages/$file
-}
-
-function install_addons()
+function install_repository()
 {
 	# ==================================================================
 	title "Installing Emby for Kodi repository and addons..."
 	# ==================================================================
-	# get the repository for Emby for Kodi:
-	get_addon http://kodi.emby.media repository.emby.kodi
+    file=$(curl -s http://kodi.emby.media | sed -n 's/.*href="\([^"]*\).*/\1/p' | grep "repository.emby.kodi")
+    wget --no-check-certificate -w 4 http://kodi.emby.media/$file -O /tmp/$file 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading Addon" --gauge "\nPlease wait...\n" 11 70
+    unzip -o /tmp/$file -d $HOME_DIR/.kodi/addons
+    mv /tmp/$file $HOME_DIR/.kodi/addons/packages/$file
 
-	# figure out where to pull the Kodi addons:
-	dir='<datadir>http'$(cat $HOME_DIR/.kodi/addons/repository.emby.kodi/addon.xml | grep "</datadir>" | sed -n 's/.*http//p')
-	dir=$(echo $dir | grep -oPm1 "(?<=<datadir>)[^<]+")
-
-	# pull the rest of the addons from the Emby repository:
-	get_addon $dir/plugin.video.emby/ plugin.video.emby
-	get_addon $dir/plugin.video.emby.movies/ plugin.video.emby.movies
-	get_addon $dir/plugin.video.emby.musicvideos/ plugin.video.emby.musicvideos
-	get_addon $dir/plugin.video.emby.tvshows/ plugin.video.emby.tvshows
-	
 	# need to shutdown Kodi, then restart so that Kodi sees the new add-ons:
 	sudo service mediacenter stop
 	sleep 1
@@ -299,6 +300,9 @@ function done_installing()
 	exec $HOME_DIR/install-emby.sh
 }
 
+# ==================================================================
+# Functions performing additional tasks in this script:
+# ==================================================================
 function upgrade_emby()
 {
 	upgraded=0
@@ -308,10 +312,13 @@ function upgrade_emby()
 		find_latest_stable
 	fi
 	if [[ $LATEST_VER > $INSTALLED ]]; then
-		EMBY_HOME=$EMBY_NEW
+		EMBY_ORIG=$EMBY_HOME
+		if [ -d $EMBY_HOME ]; then
+			EMBY_HOME=$EMBY_NEW
+		fi
 		install_emby
+		EMBY_HOME=$HOME_ORIG
 		create_service
-		#reboot
 		upgraded=1
 	fi
 }
@@ -331,119 +338,10 @@ function toggle_cron_job()
 		sudo rm $EMBY_HOME/install-emby.sh
 		crontab -l | { cat | grep -v "install-emby.sh"; } | crontab -
 		dialog --ascii-lines --title "Removing Cron Job for OSMC" --msgbox "\nThe Emby Server Update cron job has been removed.\nPress OK to return to the menu.\n" 11 70
-	fi	
+	fi
 
 	# restart script
 	exec $HOME_DIR/install-emby.sh
-}
-
-# ==================================================================
-# Functions that deal with moving Emby data to a USB stick:
-# ==================================================================
-function select_usbkey()
-{
-	#==============================================================================================
-	# Code Source: http://unix.stackexchange.com/questions/60299/how-to-determine-which-sd-is-usb
-	#==============================================================================================	
-	# Figure out which USB stick we're going to use:
-	#==============================================================================================
-	USBKEYS=($(
-		grep -Hv ^0$ /sys/block/*/removable |
-		sed s/removable:.*$/device\\/uevent/ |
-		xargs grep -H ^DRIVER=sd |
-		sed s/device.uevent.*$/size/ |
-		xargs grep -Hv ^0$ |
-		cut -d / -f 4
-	))
-	case ${#USBKEYS[@]} in
-		0) # No USB sticks found:
-			dialog --ascii-lines --title "Simple Emby Server Installer" --msgbox "\nNo USB sticks were found.\nPress OK to return to the menu.\n" 8 40
-			return
-			;;
-		1) # Use the only USB stick we found:
-			STICK=$USBKEYS 
-			;;
-		*)	# Let user choose between the USB sticks we found:
-			STICK=$(
-				bash -c "$(
-					echo -n  dialog --menu \"Choose which USB stick to copy to:\" 22 76 17;
-					for dev in ${USBKEYS[@]} ;do
-						echo -n \ $dev \"$(sed -e s/\ *$//g </sys/block/$dev/device/model)\" ;
-					done
-				)" 2>&1 >/dev/tty
-			)
-			;;
-	esac
-	[ "$STICK" ] || return
-
-	# Figure out which partition on selected USB stick we're going to use:
-	#==============================================================================================
-	df --output=source,target /dev/$STICK* | grep "/dev/$STICK" > /tmp/partitions.txt
-	case $(wc -l < /tmp/partitions.txt) in
-		0) # No USB sticks found:
-			dialog --ascii-lines --title "Simple Emby Server Installer" --msgbox "\nNo USB partitions were found.\nPress OK to return to the menu.\n" 8 40
-			return
-			;;
-		1) # Use the only USB stick we found:
-			STICK=$(cat /tmp/partitions.txt | cut -d" " -f1)
-			;;
-
-		*)	# Let user choose between the USB partitions we found:
-			STICK=$(
-				bash -c "$(
-					echo -n  dialog --menu \"Choose which USB partition to copy to:\" 22 76 17;
-					cat /tmp/partitions.txt
-				)" 2>&1 >/dev/tty
-			)
-			;;
-	esac
-	rm /tmp/partitions.txt
-	[ "$STICK" ] || return
-}
-#move_to_usbkey; exit;
-
-# ==================================================================
-# Function to retrieve & process file for ImagesByName project...
-# ==================================================================
-function get_imagesbyname()
-{
-	#=============================================================================================
-	title "Retrieving file for ImagesByName project..."
-	#=============================================================================================
-	TMP=/opt/mediabrowser/ProgramData-Server/temp
-	#sudo mkdir -p $TMP >& /dev/null
-	#sudo wget --no-check-certificate -w 4 -O $TMP/IBN_People_Wave_1.7z https://dl.dropbox.com/s/ip3zvo3uxy5knp0/IBN_People_Wave_1.7z?dl=1 2>&1 | grep --line-buffered -oP "(\d+(\.\d+)?(?=%))" | dialog --ascii-lines --title "Downloading \"IBN_People_Wave_1.7z\"" --gauge "\nPlease wait...\n" 11 70
-	#sudo 7za x -y -o$TMP $TMP/IBN_People_Wave_1.7z
-
-	#=============================================================================================
-	title "Resetting file permissions on metadata folder..."
-	#=============================================================================================
-	LINE=$(sudo ls -l /opt/mediabrowser/ProgramData-Server/ | grep 'metadata')
-	sudo chown -R $(echo $LINE | cut -d' ' -f 4):$(echo $LINE | cut -d' ' -f 5) $TMP
-
-	#=============================================================================================
-	title "Move images of people around..."
-	#=============================================================================================
-	TMP=$TMP/People
-	PPL=/opt/mediabrowser/ProgramData-Server/metadata/People
-	TOTAL=$(sudo ls -1 $TMP | tee /tmp/filelist.txt | wc -l)
-	COUNT=0
-	cat /tmp/filelist.txt | (while read -r line
-	do
-		DST=$(echo $line | tr "'" " " | tr "  " " ")
-		DST="${DST// mc/ mc }"
-		DST="${DST//\./\.\ }"7
-		DST="$(echo $DST | sed -e 's/^./\U&/g; s/ ./\U&/g')"
-		DST="${DST// Mc / Mc}"
-		DST="${DST//\.\ \ /\.\ }"
-		echo $(( $COUNT*100/$TOTAL ))\%: Processing "$DST"...
-		COUNT=$(( $COUNT+1 ))
-		LTR=$(echo $DST | cut -c 1 | sed -e 's/^./\U&/g; s/ ./\U&/g')
-		sudo mkdir -p $PPL/$LTR/"$DST" >& /dev/null
-		sudo mv $TMP/"$line"/*.jpg $PPL/$LTR/"$DST"/poster.jpg && sudo rm -R $TMP/"$line"
-	done)
-	#done) | dialog --title "Moving images into correct folders..." --gauge "\nPlease wait...\n" 11 70
-	sudo rm -R /opt/mediabrowser/ProgramData-Server/temp
 }
 
 # ==================================================================
@@ -479,9 +377,9 @@ fi
 title "Emby Server installation - Version $VERSION"
 cmd=(dialog --ascii-lines --cancel-label "Exit" --backtitle "Simple Emby Server Installer - Version $VERSION" --menu "Welcome to the Simple Emby Server Installer.\nWhat would you like to do?\n " 18 50 17)
 opt1=
-if [ "$INSTALLED" == "" ]]; then
+if [[ "$INSTALLED" -eq "" ]]; then
 	options=(
-		1 "Install Emby Server"
+		1 "Install Emby Server and support packages"
 		2 "Update this script to latest version"
 	)
 else
@@ -499,16 +397,19 @@ fi
 choice=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
 case $choice in
 	1)	# Install Emby Server and support packages:
-		make_choice
-		install_prerequisites
-		install_dependencies
-		build_ffmpeg
-		install_mono
-		install_emby
-		create_service
+		#make_choice
+		#install_prerequisites
+		#install_dependencies
+		#build_x264
+		#build_ffmpeg
+		#install_mono
+		#install_emby
+		#fix_config
+		#create_service
 		if [[ -d $HOME_DIR/.kodi ]]; then
-			install_addons
+			install_repository
 		fi
+		exit
 		done_installing
 		;;
 
@@ -533,21 +434,22 @@ case $choice in
 
 	6)	# Install Emby for Kodi add-ons
 		if [[ -d $HOME_DIR/.kodi ]]; then
-			install_addons
+			install_repository
 		else
 			dialog --ascii-lines --title "Install Emby for Kodi Addons" --msgbox "\nYour Kodi install could not be found at \"$EMBY_HOME\".\nThe add-ons were not installed.\nPress OK to return to the menu.\n" 11 70
 		fi
 		exec $HOME_DIR/install-emby.sh
 		;;
-		
+
 	7)	# Change Emby Server installation branch:
 		make_choice
 		install_emby
 		create_service
 		done_installing
 		;;
-		
+
 	8)  # Rebuild FFmpeg from Git repository
+		build_x264
 		build_ffmpeg
 		exec $HOME_DIR/install-emby.sh
 		;;

@@ -1,3 +1,18 @@
+v1.0 - January 17th, 2017
+o Added code to compile and install x264 code before compiling ffmpeg
+o Modified ffmpeg compilation code to enable x264 and mp3lame libraries.
+o Modified script so that correct folder is used when updating script.
+o Modified service script to run Emby server under root user.
+o Fixed coding issues in the service-building function.
+o Fixed dialog box stating what version Emby the script is downloading.
+o Fixed linux debian version checking code for Mono installation.
+o Fixed special upgrade case where Emby install folder had been removed.
+o Removed automatic installation of Emby plugins under Kodi (keeps repository)
+o Removed internal release v0.9 changes for download ffmpeg/x264.
+
+v0.9 - January 17th, 2017
+o Internal release: Testing pre-compiled ffmpeg and x264, then install.
+
 v0.8 - October 3rd, 2016
 o Changed Emby version detection to avoid storing version in seperate file.
 o Changed Emby service file to use sudo to start/stop service and remove PID file.
