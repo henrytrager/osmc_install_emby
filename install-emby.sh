@@ -397,15 +397,15 @@ fi
 choice=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
 case $choice in
 	1)	# Install Emby Server and support packages:
-		#make_choice
-		#install_prerequisites
-		#install_dependencies
-		#build_x264
-		#build_ffmpeg
-		#install_mono
-		#install_emby
-		#fix_config
-		#create_service
+		make_choice
+		install_prerequisites
+		install_dependencies
+		build_x264
+		build_ffmpeg
+		install_mono
+		install_emby
+		fix_config
+		create_service
 		if [[ -d $HOME_DIR/.kodi ]]; then
 			install_repository
 		fi
